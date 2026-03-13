@@ -91,10 +91,13 @@ jobs:
 
       - name: Set macOS SDK environment
         run: |
+          # 强制使用 Xcode 工具链，避免 CommandLineTools 与 Xcode SDK 混用导致头文件冲突
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
           echo "SDKROOT=${SDKROOT}" >> "$GITHUB_ENV"
-          echo "CPATH=${SDKROOT}/usr/include" >> "$GITHUB_ENV"
-          echo "LIBRARY_PATH=${SDKROOT}/usr/lib" >> "$GITHUB_ENV"
+          # 注意：不设置 CPATH/LIBRARY_PATH，否则裸 C 头文件会抢在 libc++ 包装层之前被找到，
+          # 导致 <cstdlib> 等 C++ 标准库头文件报 "didn't find libc++'s <stdlib.h>" 错误。
+          # CMake 已通过 -DCMAKE_OSX_SYSROOT 正确管理头文件搜索路径，无需手动追加。
 
       - name: Download MariaDB source
         run: |
