@@ -89,6 +89,13 @@ jobs:
             libxml2 \
             xz
 
+      - name: Set macOS SDK environment
+        run: |
+          SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+          echo "SDKROOT=${SDKROOT}" >> "$GITHUB_ENV"
+          echo "CPATH=${SDKROOT}/usr/include" >> "$GITHUB_ENV"
+          echo "LIBRARY_PATH=${SDKROOT}/usr/lib" >> "$GITHUB_ENV"
+
       - name: Download MariaDB source
         run: |
           VERSION="${{ steps.meta.outputs.version }}"
@@ -113,6 +120,10 @@ jobs:
             -DCMAKE_PREFIX_PATH="${BREW_PREFIX}" \
             -DCMAKE_OSX_ARCHITECTURES="arm64" \
             -DCMAKE_OSX_DEPLOYMENT_TARGET="12.0" \
+            -DCMAKE_OSX_SYSROOT="$(xcrun --sdk macosx --show-sdk-path)" \
+            -DCMAKE_CXX_STANDARD=17 \
+            -DCMAKE_C_COMPILER="$(xcrun --find clang)" \
+            -DCMAKE_CXX_COMPILER="$(xcrun --find clang++)" \
             -DOPENSSL_ROOT_DIR="${BREW_PREFIX}/opt/openssl@3" \
             -DBISON_EXECUTABLE="${BREW_PREFIX}/opt/bison/bin/bison" \
             -DWITH_SSL=system \
@@ -141,6 +152,10 @@ jobs:
             -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/${ARCHIVE_NAME}" \
             -DCMAKE_OSX_ARCHITECTURES="x86_64" \
             -DCMAKE_OSX_DEPLOYMENT_TARGET="12.0" \
+            -DCMAKE_OSX_SYSROOT="$(xcrun --sdk macosx --show-sdk-path)" \
+            -DCMAKE_CXX_STANDARD=17 \
+            -DCMAKE_C_COMPILER="$(xcrun --find clang)" \
+            -DCMAKE_CXX_COMPILER="$(xcrun --find clang++)" \
             -DCMAKE_CROSSCOMPILING=ON \
             -DCMAKE_C_FLAGS="-target ${TARGET_TRIPLE}" \
             -DCMAKE_CXX_FLAGS="-target ${TARGET_TRIPLE}" \
