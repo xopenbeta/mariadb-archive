@@ -7,8 +7,8 @@
 推送符合 `mariadb-X.Y.Z` 格式的 git tag 即可自动触发 GitHub Actions 构建：
 
 ```bash
-git tag v202603131116
-git push origin v202603131116
+git tag v202603131120
+git push origin v202603131120
 ```
 
 构建完成后，GitHub Release 页面会自动发布对应版本的两个平台二进制包。

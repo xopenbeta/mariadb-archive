@@ -49,10 +49,18 @@ jobs:
         env:
           HOMEBREW_NO_AUTO_UPDATE: "1"
           HOMEBREW_NO_INSTALL_CLEANUP: "1"
+          NONINTERACTIVE: "1"
         run: |
-          # 在 /usr/local 安装独立的 x86_64 Homebrew（通过 Rosetta 2）
-          arch -x86_64 /bin/bash -c \
-            "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || true
+          # 确保 Rosetta 2 已安装（macos-15 arm64 runner 需要它运行 x86_64 二进制）
+          softwareupdate --install-rosetta --agree-to-license 2>&1 | \
+            grep -v 'already installed' || true
+
+          # 在 /usr/local 安装独立的 x86_64 Homebrew（非交互式）
+          if [ ! -f /usr/local/bin/brew ]; then
+            arch -x86_64 /bin/bash -c \
+              "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          fi
+
           arch -x86_64 /usr/local/bin/brew install \
             openssl@3 \
             pcre \
@@ -126,15 +134,25 @@ jobs:
           ARCHIVE_NAME="${{ steps.meta.outputs.archive_name }}"
           ARM_BREW="$(brew --prefix)"
           X86_BREW="/usr/local"
+          TARGET_TRIPLE="x86_64-apple-macos12"
 
           cmake -S "mariadb-${VERSION}" -B "mariadb-${VERSION}/build" \
             -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
             -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/${ARCHIVE_NAME}" \
             -DCMAKE_OSX_ARCHITECTURES="x86_64" \
             -DCMAKE_OSX_DEPLOYMENT_TARGET="12.0" \
-            -DCMAKE_C_FLAGS="-target x86_64-apple-macos12" \
-            -DCMAKE_CXX_FLAGS="-target x86_64-apple-macos12" \
+            -DCMAKE_CROSSCOMPILING=ON \
+            -DCMAKE_C_FLAGS="-target ${TARGET_TRIPLE}" \
+            -DCMAKE_CXX_FLAGS="-target ${TARGET_TRIPLE}" \
+            -DCMAKE_EXE_LINKER_FLAGS="-target ${TARGET_TRIPLE}" \
+            -DCMAKE_SHARED_LINKER_FLAGS="-target ${TARGET_TRIPLE}" \
+            -DCMAKE_MODULE_LINKER_FLAGS="-target ${TARGET_TRIPLE}" \
             -DCMAKE_PREFIX_PATH="${X86_BREW}" \
+            -DCMAKE_FIND_ROOT_PATH="${X86_BREW}" \
+            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
+            -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
+            -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY \
+            -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
             -DOPENSSL_ROOT_DIR="${X86_BREW}/opt/openssl@3" \
             -DBISON_EXECUTABLE="${ARM_BREW}/opt/bison/bin/bison" \
             -DWITH_SSL=system \
