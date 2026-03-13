@@ -6,6 +6,7 @@
 
 ```bash
 git tag v202603131226
+git push
 git push origin v202603131226
 ```
 
