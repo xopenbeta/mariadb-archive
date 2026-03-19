@@ -83,8 +83,12 @@ jobs:
           SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
           CC="$(xcrun --find clang)"
           CXX="$(xcrun --find clang++)"
+          ZLIB_INCLUDE_DIR="${SDK_PATH}/usr/include"
+          ZLIB_LIBRARY="${SDK_PATH}/usr/lib/libz.tbd"
           echo "SDK_PATH=${SDK_PATH}"
           echo "CC=${CC}  CXX=${CXX}"
+          echo "ZLIB_INCLUDE_DIR=${ZLIB_INCLUDE_DIR}"
+          echo "ZLIB_LIBRARY=${ZLIB_LIBRARY}"
 
           # Export SDKROOT so Clang automatically resolves SDK and libc++ headers
           export SDKROOT="${SDK_PATH}"
@@ -103,6 +107,8 @@ jobs:
             -DCMAKE_FIND_FRAMEWORK=LAST \
             -DOPENSSL_ROOT_DIR="${OPENSSL_ROOT}" \
             -DOPENSSL_INCLUDE_DIR="${OPENSSL_ROOT}/include" \
+            -DZLIB_INCLUDE_DIR="${ZLIB_INCLUDE_DIR}" \
+            -DZLIB_LIBRARY="${ZLIB_LIBRARY}" \
             -DBISON_EXECUTABLE="${BISON_ROOT}/bin/bison" \
             -DDEFAULT_CHARSET=utf8mb4 \
             -DDEFAULT_COLLATION=utf8mb4_general_ci \
