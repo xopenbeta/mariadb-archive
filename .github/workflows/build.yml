@@ -52,16 +52,17 @@ jobs:
         run: |
           SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
           CXX="$(xcrun --find clang++)"
+          export SDKROOT="${SDK_PATH}"
           echo "=== Diagnostics ==="
           echo "SDK path: ${SDK_PATH}"
           echo "CXX: ${CXX}"
+          echo "xcode-select: $(xcode-select -p)"
           echo "SDK c++/v1 exists:       $([ -d "${SDK_PATH}/usr/include/c++/v1" ] && echo YES || echo NO)"
           echo "SDK c++/v1/stddef.h:     $([ -f "${SDK_PATH}/usr/include/c++/v1/stddef.h" ] && echo YES || echo NO)"
           echo "=== Default C++ include search order ==="
           printf '' | "${CXX}" -std=c++17 -stdlib=libc++ -x c++ -E -v - 2>&1 | \
             sed -n '/#include <...> search starts here:/,/End of search list./p'
           echo "===================" 
-          # Export SDKROOT persistently so the compiler uses the correct SDK in all build steps
           echo "SDKROOT=${SDK_PATH}" >> "${GITHUB_ENV}"
 
       - name: Download MariaDB source
@@ -93,6 +94,7 @@ jobs:
             -DCMAKE_CXX_COMPILER="${CXX}" \
             -DCMAKE_INSTALL_PREFIX="/mariadb-${MARIADB_VERSION}-macos-${{ matrix.arch }}" \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_VERBOSE_MAKEFILE=ON \
             -DCMAKE_CXX_STANDARD=17 \
             -DCMAKE_CXX_FLAGS="-stdlib=libc++" \
             -DCMAKE_EXE_LINKER_FLAGS="-stdlib=libc++" \
@@ -117,7 +119,7 @@ jobs:
       - name: Build
         run: |
           cd "mariadb-${MARIADB_VERSION}/build"
-          make -j$(sysctl -n hw.logicalcpu)
+          make VERBOSE=1 -j$(sysctl -n hw.logicalcpu)
 
       - name: Package
         run: |
