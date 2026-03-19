@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-15
+          - runner: macos-14
             arch: arm64
 
     runs-on: ${{ matrix.runner }}
@@ -23,12 +23,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select Xcode
+      - name: Select Xcode 15.4
         run: |
-          # Pick the latest Xcode 16.x (or fall back to whatever is newest)
-          XCODE_APP="$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)"
-          if [ -z "${XCODE_APP}" ]; then
-            XCODE_APP="$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)"
+          XCODE_APP="/Applications/Xcode_15.4.app"
+          if [ ! -d "${XCODE_APP}" ]; then
+            echo "Expected Xcode not found: ${XCODE_APP}"
+            exit 1
           fi
           echo "Selected Xcode: ${XCODE_APP}"
           sudo xcode-select -s "${XCODE_APP}/Contents/Developer"
