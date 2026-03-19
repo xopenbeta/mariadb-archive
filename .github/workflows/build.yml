@@ -3,289 +3,97 @@ name: Build MariaDB for macOS
 on:
   push:
     tags:
-      - '**'
+      - 'v*'
 
 env:
-  BUILD_TYPE: Release
+  MARIADB_VERSION: "12.2.2"
 
 jobs:
   build:
-    name: Build ${{ matrix.mariadb_version }} (${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
-        mariadb_version:
-          - "10.6.25"
-          - "10.11.16"
-          - "11.4.10"
-          - "11.8.6"
-          - "12.2.2"
-          - "12.3.1"
-        arch: [arm64, x86_64]
+        include:
+          - runner: macos-14
+            arch: arm64
 
-    runs-on: macos-15
+    runs-on: ${{ matrix.runner }}
 
     steps:
-      - name: Extract metadata from tag
-        id: meta
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
         run: |
-          VERSION="${{ matrix.mariadb_version }}"
-          ARCHIVE_NAME="mariadb-${VERSION}-macos-${{ matrix.arch }}"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "archive_name=${ARCHIVE_NAME}" >> "$GITHUB_OUTPUT"
-
-      - name: Install arm64 build dependencies (host tools)
-        env:
-          HOMEBREW_NO_AUTO_UPDATE: "1"
-          HOMEBREW_NO_INSTALL_CLEANUP: "1"
-        run: |
-          brew install \
-            cmake \
-            bison \
-            pkg-config
-
-      - name: Install x86_64 Homebrew and dependencies (cross only)
-        if: ${{ matrix.arch == 'x86_64' }}
-        env:
-          HOMEBREW_NO_AUTO_UPDATE: "1"
-          HOMEBREW_NO_INSTALL_CLEANUP: "1"
-          NONINTERACTIVE: "1"
-        run: |
-          # 确保 Rosetta 2 已安装（macos-15 arm64 runner 需要它运行 x86_64 二进制）
-          softwareupdate --install-rosetta --agree-to-license 2>&1 | \
-            grep -v 'already installed' || true
-
-          # 在 /usr/local 安装独立的 x86_64 Homebrew（非交互式）
-          if [ ! -f /usr/local/bin/brew ]; then
-            arch -x86_64 /bin/bash -c \
-              "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          fi
-
-          arch -x86_64 /usr/local/bin/brew install \
-            openssl@3 \
-            pcre \
-            pcre2 \
-            libevent \
-            lz4 \
-            zstd \
-            snappy \
-            libxml2 \
-            xz
-
-      - name: Install arm64 dependencies (native only)
-        if: ${{ matrix.arch == 'arm64' }}
-        env:
-          HOMEBREW_NO_AUTO_UPDATE: "1"
-          HOMEBREW_NO_INSTALL_CLEANUP: "1"
-        run: |
-          brew install \
-            openssl@3 \
-            pcre \
-            pcre2 \
-            libevent \
-            lz4 \
-            zstd \
-            snappy \
-            libxml2 \
-            xz
-
-      - name: Set macOS SDK environment
-        run: |
-          # 强制使用 Xcode 工具链，避免 CommandLineTools 与 Xcode SDK 混用导致头文件冲突
-          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-          SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
-          echo "SDKROOT=${SDKROOT}" >> "$GITHUB_ENV"
-          # 注意：不设置 CPATH/LIBRARY_PATH，否则裸 C 头文件会抢在 libc++ 包装层之前被找到，
-          # 导致 <cstdlib> 等 C++ 标准库头文件报 "didn't find libc++'s <stdlib.h>" 错误。
-          # CMake 已通过 -DCMAKE_OSX_SYSROOT 正确管理头文件搜索路径，无需手动追加。
+          brew install cmake openssl@3 bison pkg-config pcre2
 
       - name: Download MariaDB source
         run: |
-          VERSION="${{ steps.meta.outputs.version }}"
-          DOWNLOAD_URL="https://archive.mariadb.org/mariadb-${VERSION}/source/mariadb-${VERSION}.tar.gz"
-          echo "Downloading: ${DOWNLOAD_URL}"
-          curl -fSL --retry 3 --retry-delay 5 \
-            "${DOWNLOAD_URL}" \
-            -o "mariadb-${VERSION}.tar.gz"
-          tar xzf "mariadb-${VERSION}.tar.gz"
-          echo "Source extracted: $(du -sh mariadb-${VERSION} | cut -f1)"
+          curl -fSL -o "mariadb-${MARIADB_VERSION}.tar.gz" \
+            "https://archive.mariadb.org/mariadb-${MARIADB_VERSION}/source/mariadb-${MARIADB_VERSION}.tar.gz"
+          tar xzf "mariadb-${MARIADB_VERSION}.tar.gz"
 
-      - name: Configure CMake (native arm64)
-        if: ${{ matrix.arch == 'arm64' }}
+      - name: Configure
         run: |
-          VERSION="${{ steps.meta.outputs.version }}"
-          ARCHIVE_NAME="${{ steps.meta.outputs.archive_name }}"
-          BREW_PREFIX="$(brew --prefix)"
+          OPENSSL_ROOT="$(brew --prefix openssl@3)"
+          BISON_ROOT="$(brew --prefix bison)"
 
-          cmake -S "mariadb-${VERSION}" -B "mariadb-${VERSION}/build" \
-            -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
-            -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/${ARCHIVE_NAME}" \
-            -DCMAKE_PREFIX_PATH="${BREW_PREFIX}" \
-            -DCMAKE_OSX_ARCHITECTURES="arm64" \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET="12.0" \
-            -DCMAKE_OSX_SYSROOT="$(xcrun --sdk macosx --show-sdk-path)" \
-            -DCMAKE_CXX_STANDARD=17 \
-            -DCMAKE_C_COMPILER="$(xcrun --find clang)" \
-            -DCMAKE_CXX_COMPILER="$(xcrun --find clang++)" \
-            -DOPENSSL_ROOT_DIR="${BREW_PREFIX}/opt/openssl@3" \
-            -DBISON_EXECUTABLE="${BREW_PREFIX}/opt/bison/bin/bison" \
-            -DWITH_SSL=system \
-            -DWITH_ZLIB=system \
-            -DWITH_UNIT_TESTS=OFF \
-            -DWITH_EMBEDDED_SERVER=OFF \
+          cd "mariadb-${MARIADB_VERSION}"
+          mkdir build && cd build
+
+          cmake .. \
+            -DCMAKE_INSTALL_PREFIX="/mariadb-${MARIADB_VERSION}-macos-${{ matrix.arch }}" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+            -DOPENSSL_ROOT_DIR="${OPENSSL_ROOT}" \
+            -DOPENSSL_INCLUDE_DIR="${OPENSSL_ROOT}/include" \
+            -DBISON_EXECUTABLE="${BISON_ROOT}/bin/bison" \
+            -DDEFAULT_CHARSET=utf8mb4 \
+            -DDEFAULT_COLLATION=utf8mb4_general_ci \
             -DWITH_WSREP=OFF \
-            -DWITH_JEMALLOC=OFF \
+            -DPLUGIN_WSREP=NO \
+            -DWITH_ROCKSDB=OFF \
             -DPLUGIN_ROCKSDB=NO \
             -DPLUGIN_MROONGA=NO \
-            -DPLUGIN_FEEDBACK=NO \
-            -DDEFAULT_CHARSET=utf8mb4 \
-            -DDEFAULT_COLLATION=utf8mb4_general_ci
-
-      - name: Configure CMake (cross-compile x86_64)
-        if: ${{ matrix.arch == 'x86_64' }}
-        run: |
-          VERSION="${{ steps.meta.outputs.version }}"
-          ARCHIVE_NAME="${{ steps.meta.outputs.archive_name }}"
-          ARM_BREW="$(brew --prefix)"
-          X86_BREW="/usr/local"
-          TARGET_TRIPLE="x86_64-apple-macos12"
-
-          cmake -S "mariadb-${VERSION}" -B "mariadb-${VERSION}/build" \
-            -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
-            -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/${ARCHIVE_NAME}" \
-            -DCMAKE_OSX_ARCHITECTURES="x86_64" \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET="12.0" \
-            -DCMAKE_OSX_SYSROOT="$(xcrun --sdk macosx --show-sdk-path)" \
-            -DCMAKE_CXX_STANDARD=17 \
-            -DCMAKE_C_COMPILER="$(xcrun --find clang)" \
-            -DCMAKE_CXX_COMPILER="$(xcrun --find clang++)" \
-            -DCMAKE_CROSSCOMPILING=ON \
-            -DCMAKE_C_FLAGS="-target ${TARGET_TRIPLE}" \
-            -DCMAKE_CXX_FLAGS="-target ${TARGET_TRIPLE}" \
-            -DCMAKE_EXE_LINKER_FLAGS="-target ${TARGET_TRIPLE}" \
-            -DCMAKE_SHARED_LINKER_FLAGS="-target ${TARGET_TRIPLE}" \
-            -DCMAKE_MODULE_LINKER_FLAGS="-target ${TARGET_TRIPLE}" \
-            -DCMAKE_PREFIX_PATH="${X86_BREW}" \
-            -DCMAKE_FIND_ROOT_PATH="${X86_BREW}" \
-            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
-            -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
-            -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY \
-            -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
-            -DOPENSSL_ROOT_DIR="${X86_BREW}/opt/openssl@3" \
-            -DBISON_EXECUTABLE="${ARM_BREW}/opt/bison/bin/bison" \
-            -DWITH_SSL=system \
-            -DWITH_ZLIB=system \
-            -DWITH_UNIT_TESTS=OFF \
-            -DWITH_EMBEDDED_SERVER=OFF \
-            -DWITH_WSREP=OFF \
+            -DPLUGIN_COLUMNSTORE=NO \
             -DWITH_JEMALLOC=OFF \
-            -DPLUGIN_ROCKSDB=NO \
-            -DPLUGIN_MROONGA=NO \
-            -DPLUGIN_FEEDBACK=NO \
-            -DDEFAULT_CHARSET=utf8mb4 \
-            -DDEFAULT_COLLATION=utf8mb4_general_ci
+            -DWITH_UNIT_TESTS=OFF \
+            -DWITH_MARIABACKUP=ON
 
       - name: Build
         run: |
-          VERSION="${{ steps.meta.outputs.version }}"
-          cmake --build "mariadb-${VERSION}/build" \
-            --config "${BUILD_TYPE}" \
-            --parallel "$(sysctl -n hw.logicalcpu)"
+          cd "mariadb-${MARIADB_VERSION}/build"
+          make -j$(sysctl -n hw.logicalcpu)
 
-      - name: Install
+      - name: Package
         run: |
-          VERSION="${{ steps.meta.outputs.version }}"
-          cmake --install "mariadb-${VERSION}/build" \
-            --config "${BUILD_TYPE}"
+          INSTALL_DIR="mariadb-${MARIADB_VERSION}-macos-${{ matrix.arch }}"
 
-      - name: Create archive and checksum
-        run: |
-          ARCHIVE_NAME="${{ steps.meta.outputs.archive_name }}"
-          tar czf "${ARCHIVE_NAME}.tar.gz" "${ARCHIVE_NAME}/"
-          shasum -a 256 "${ARCHIVE_NAME}.tar.gz" > "${ARCHIVE_NAME}.tar.gz.sha256"
-          echo "Archive size: $(du -sh ${ARCHIVE_NAME}.tar.gz | cut -f1)"
+          cd "mariadb-${MARIADB_VERSION}/build"
+          make install DESTDIR="${GITHUB_WORKSPACE}/stage"
 
-      - name: Upload build artifacts
+          cd "${GITHUB_WORKSPACE}/stage"
+          tar czf "${GITHUB_WORKSPACE}/${INSTALL_DIR}.tar.gz" "${INSTALL_DIR}"
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.meta.outputs.archive_name }}
-          path: |
-            ${{ steps.meta.outputs.archive_name }}.tar.gz
-            ${{ steps.meta.outputs.archive_name }}.tar.gz.sha256
-          retention-days: 1
-          if-no-files-found: error
+          name: mariadb-${{ env.MARIADB_VERSION }}-macos-${{ matrix.arch }}
+          path: mariadb-${{ env.MARIADB_VERSION }}-macos-${{ matrix.arch }}.tar.gz
 
   release:
-    name: Create GitHub Release
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
-      - name: Set release name
-        id: meta
-        run: |
-          echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-
-      - name: Download all build artifacts
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          merge-multiple: true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: "MariaDB macOS Binaries (${{ steps.meta.outputs.tag }})"
-          body: |
-            Pre-built MariaDB binaries for macOS (Apple Silicon arm64 + Intel x86_64).
-
-            ## Included Versions
-
-            - 10.6.25
-            - 10.11.16
-            - 11.4.10
-            - 11.8.6
-            - 12.2.2
-            - 12.3.1
-
-            ## Verify Checksums
-
-            ```bash
-            shasum -a 256 -c mariadb-<version>-macos-<arch>.tar.gz.sha256
-            ```
-
-            ## Quick Start
-
-            ```bash
-            # Extract
-            tar xzf mariadb-<version>-macos-<arch>.tar.gz
-            cd mariadb-<version>-macos-<arch>
-
-            # Initialize data directory (first time only)
-            ./scripts/mariadb-install-db --datadir=$(pwd)/data --basedir=$(pwd)
-
-            # Start server
-            ./bin/mariadbd --datadir=$(pwd)/data --basedir=$(pwd) \
-              --socket=/tmp/mariadb.sock --port=3306 &
-
-            # Connect
-            ./bin/mariadb --socket=/tmp/mariadb.sock
-
-            # Shutdown
-            ./bin/mariadb-admin --socket=/tmp/mariadb.sock shutdown
-            ```
-
-            ## Build Info
-
-            - macOS deployment target: 12.0 (Monterey+)
-            - SSL: OpenSSL 3.x
-            - Default charset: `utf8mb4`, collation: `utf8mb4_general_ci`
-            - Built from official source: [archive.mariadb.org](https://archive.mariadb.org)
           files: |
-            artifacts/*.tar.gz
-            artifacts/*.sha256
-          draft: false
-          prerelease: false
-          fail_on_unmatched_files: false
+            mariadb-*/mariadb-*.tar.gz
+          generate_release_notes: true
