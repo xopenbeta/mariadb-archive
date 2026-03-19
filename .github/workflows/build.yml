@@ -32,6 +32,9 @@ jobs:
           fi
           echo "Selected Xcode: ${XCODE_APP}"
           sudo xcode-select -s "${XCODE_APP}/Contents/Developer"
+          xcodebuild -version
+          xcrun clang --version
+          xcrun clang++ --version
           echo "DEVELOPER_DIR=${XCODE_APP}/Contents/Developer" >> "${GITHUB_ENV}"
 
       - name: Install dependencies
@@ -73,7 +76,8 @@ jobs:
           BISON_ROOT="$(brew --prefix bison)"
 
           cd "mariadb-${MARIADB_VERSION}"
-          mkdir -p build && cd build
+          rm -rf build
+          mkdir build && cd build
 
           SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
           CC="$(xcrun --find clang)"
