@@ -45,16 +45,19 @@ jobs:
           echo "C_INCLUDE_PATH=" >> "${GITHUB_ENV}"
           echo "CPLUS_INCLUDE_PATH=" >> "${GITHUB_ENV}"
 
-      - name: Fix libc++ headers
+      - name: Inspect libc++ headers
         run: |
           SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
-          TOOLCHAIN_DIR="$(dirname $(dirname $(xcrun --find clang)))"
+          TOOLCHAIN_USR="$(dirname $(dirname $(xcrun --find clang)))"
           echo "=== Diagnostics ==="
           echo "SDK path: ${SDK_PATH}"
-          echo "Toolchain dir: ${TOOLCHAIN_DIR}"
+          echo "Toolchain usr dir: ${TOOLCHAIN_USR}"
           echo "SDK c++/v1 exists:       $([ -d "${SDK_PATH}/usr/include/c++/v1" ] && echo YES || echo NO)"
           echo "SDK c++/v1/stddef.h:     $([ -f "${SDK_PATH}/usr/include/c++/v1/stddef.h" ] && echo YES || echo NO)"
-          echo "Toolchain c++/v1 exists: $([ -d "${TOOLCHAIN_DIR}/include/c++/v1" ] && echo YES || echo NO)"
+          echo "Toolchain c++/v1 exists: $([ -d "${TOOLCHAIN_USR}/include/c++/v1" ] && echo YES || echo NO)"
+          echo "Toolchain stddef.h:      $([ -f "${TOOLCHAIN_USR}/include/c++/v1/stddef.h" ] && echo YES || echo NO)"
+          echo "Toolchain stdlib.h:      $([ -f "${TOOLCHAIN_USR}/include/c++/v1/stdlib.h" ] && echo YES || echo NO)"
+          echo "Toolchain stdint.h:      $([ -f "${TOOLCHAIN_USR}/include/c++/v1/stdint.h" ] && echo YES || echo NO)"
           echo "===================" 
           # Export SDKROOT persistently so the compiler uses the correct SDK in all build steps
           echo "SDKROOT=${SDK_PATH}" >> "${GITHUB_ENV}"
@@ -74,9 +77,11 @@ jobs:
           mkdir -p build && cd build
 
           SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
+          TOOLCHAIN_USR="$(dirname $(dirname $(xcrun --find clang)))"
           CC="$(xcrun --find clang)"
           CXX="$(xcrun --find clang++)"
           echo "SDK_PATH=${SDK_PATH}"
+          echo "TOOLCHAIN_USR=${TOOLCHAIN_USR}"
           echo "CC=${CC}  CXX=${CXX}"
 
           # Export SDKROOT so Clang automatically resolves SDK and libc++ headers
@@ -88,7 +93,7 @@ jobs:
             -DCMAKE_INSTALL_PREFIX="/mariadb-${MARIADB_VERSION}-macos-${{ matrix.arch }}" \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_CXX_STANDARD=17 \
-            -DCMAKE_CXX_FLAGS="-stdlib=libc++ -isystem ${SDK_PATH}/usr/include/c++/v1" \
+            -DCMAKE_CXX_FLAGS="-stdlib=libc++ -isystem ${TOOLCHAIN_USR}/include/c++/v1" \
             -DCMAKE_EXE_LINKER_FLAGS="-stdlib=libc++" \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
             -DCMAKE_OSX_SYSROOT="${SDK_PATH}" \
