@@ -45,6 +45,25 @@ jobs:
           echo "C_INCLUDE_PATH=" >> "${GITHUB_ENV}"
           echo "CPLUS_INCLUDE_PATH=" >> "${GITHUB_ENV}"
 
+      - name: Fix libc++ headers
+        run: |
+          SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
+          TOOLCHAIN_CXX="$(dirname $(dirname $(xcrun --find clang)))/include/c++/v1"
+          echo "SDK libc++ dir: ${SDK_PATH}/usr/include/c++/v1"
+          echo "Toolchain libc++ dir: ${TOOLCHAIN_CXX}"
+          # If the SDK does not contain libc++ headers, symlink from the toolchain
+          if [ ! -d "${SDK_PATH}/usr/include/c++/v1" ] && [ -d "${TOOLCHAIN_CXX}" ]; then
+            echo "Symlinking toolchain libc++ headers into SDK"
+            sudo mkdir -p "${SDK_PATH}/usr/include/c++"
+            sudo ln -s "${TOOLCHAIN_CXX}" "${SDK_PATH}/usr/include/c++/v1"
+          fi
+          # Export the resolved path for later steps
+          if [ -d "${TOOLCHAIN_CXX}" ]; then
+            echo "LIBCXX_INCLUDE=${TOOLCHAIN_CXX}" >> "${GITHUB_ENV}"
+          else
+            echo "LIBCXX_INCLUDE=${SDK_PATH}/usr/include/c++/v1" >> "${GITHUB_ENV}"
+          fi
+
       - name: Download MariaDB source
         run: |
           curl -fSL -o "mariadb-${MARIADB_VERSION}.tar.gz" \
@@ -71,7 +90,7 @@ jobs:
             -DCMAKE_INSTALL_PREFIX="/mariadb-${MARIADB_VERSION}-macos-${{ matrix.arch }}" \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_CXX_STANDARD=17 \
-            -DCMAKE_CXX_FLAGS="-isysroot ${SDK_PATH} -I${SDK_PATH}/usr/include/c++/v1" \
+            -DCMAKE_CXX_FLAGS="-isysroot ${SDK_PATH} -I${LIBCXX_INCLUDE}" \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
             -DCMAKE_OSX_SYSROOT="${SDK_PATH}" \
             -DCMAKE_FIND_FRAMEWORK=LAST \
