@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-14
+          - runner: macos-15
             arch: arm64
 
     runs-on: ${{ matrix.runner }}
@@ -49,18 +49,28 @@ jobs:
         run: |
           SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
           TOOLCHAIN_CXX="$(dirname $(dirname $(xcrun --find clang)))/include/c++/v1"
+          echo "=== Diagnostics ==="
+          echo "SDK path: ${SDK_PATH}"
           echo "SDK libc++ dir: ${SDK_PATH}/usr/include/c++/v1"
           echo "Toolchain libc++ dir: ${TOOLCHAIN_CXX}"
+          echo "Toolchain libc++ contents:"
+          ls -l "${TOOLCHAIN_CXX}" 2>/dev/null || echo "(not found)"
+          echo "SDK libc++ contents:"
+          ls -l "${SDK_PATH}/usr/include/c++/v1" 2>/dev/null || echo "(not found)"
+          echo "==================="
           # If the SDK does not contain libc++ headers, symlink from the toolchain
           if [ ! -d "${SDK_PATH}/usr/include/c++/v1" ] && [ -d "${TOOLCHAIN_CXX}" ]; then
             echo "Symlinking toolchain libc++ headers into SDK"
             sudo mkdir -p "${SDK_PATH}/usr/include/c++"
             sudo ln -s "${TOOLCHAIN_CXX}" "${SDK_PATH}/usr/include/c++/v1"
+            echo "Symlink created: $(ls -la ${SDK_PATH}/usr/include/c++/v1)"
           fi
           # Export the resolved path for later steps
           if [ -d "${TOOLCHAIN_CXX}" ]; then
+            echo "Using toolchain libc++ headers: ${TOOLCHAIN_CXX}"
             echo "LIBCXX_INCLUDE=${TOOLCHAIN_CXX}" >> "${GITHUB_ENV}"
           else
+            echo "WARNING: Toolchain libc++ not found, falling back to SDK path"
             echo "LIBCXX_INCLUDE=${SDK_PATH}/usr/include/c++/v1" >> "${GITHUB_ENV}"
           fi
 
