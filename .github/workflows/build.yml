@@ -25,12 +25,25 @@ jobs:
 
       - name: Select Xcode
         run: |
-          XCODE_APP="$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)"
+          # Pick the latest Xcode 16.x (or fall back to whatever is newest)
+          XCODE_APP="$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)"
+          if [ -z "${XCODE_APP}" ]; then
+            XCODE_APP="$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)"
+          fi
+          echo "Selected Xcode: ${XCODE_APP}"
           sudo xcode-select -s "${XCODE_APP}/Contents/Developer"
+          echo "DEVELOPER_DIR=${XCODE_APP}/Contents/Developer" >> "${GITHUB_ENV}"
 
       - name: Install dependencies
         run: |
           brew install cmake openssl@3 bison pkg-config pcre2
+
+      - name: Sanitize environment
+        run: |
+          # Prevent Homebrew headers from shadowing Xcode/SDK system headers
+          echo "CPATH=" >> "${GITHUB_ENV}"
+          echo "C_INCLUDE_PATH=" >> "${GITHUB_ENV}"
+          echo "CPLUS_INCLUDE_PATH=" >> "${GITHUB_ENV}"
 
       - name: Download MariaDB source
         run: |
@@ -46,13 +59,20 @@ jobs:
           cd "mariadb-${MARIADB_VERSION}"
           mkdir -p build && cd build
 
-          SDK_PATH="$(xcrun --show-sdk-path)"
+          SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
+          CC="$(xcrun --find clang)"
+          CXX="$(xcrun --find clang++)"
+          echo "SDK_PATH=${SDK_PATH}"
+          echo "CC=${CC}  CXX=${CXX}"
 
           cmake .. \
+            -DCMAKE_C_COMPILER="${CC}" \
+            -DCMAKE_CXX_COMPILER="${CXX}" \
             -DCMAKE_INSTALL_PREFIX="/mariadb-${MARIADB_VERSION}-macos-${{ matrix.arch }}" \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
             -DCMAKE_OSX_SYSROOT="${SDK_PATH}" \
+            -DCMAKE_FIND_FRAMEWORK=LAST \
             -DOPENSSL_ROOT_DIR="${OPENSSL_ROOT}" \
             -DOPENSSL_INCLUDE_DIR="${OPENSSL_ROOT}/include" \
             -DBISON_EXECUTABLE="${BISON_ROOT}/bin/bison" \
