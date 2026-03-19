@@ -94,13 +94,17 @@ jobs:
           echo "SDK_PATH=${SDK_PATH}"
           echo "CC=${CC}  CXX=${CXX}"
 
+          # Export SDKROOT so Clang automatically resolves SDK and libc++ headers
+          export SDKROOT="${SDK_PATH}"
+
           cmake .. \
             -DCMAKE_C_COMPILER="${CC}" \
             -DCMAKE_CXX_COMPILER="${CXX}" \
             -DCMAKE_INSTALL_PREFIX="/mariadb-${MARIADB_VERSION}-macos-${{ matrix.arch }}" \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_CXX_STANDARD=17 \
-            -DCMAKE_CXX_FLAGS="-isysroot ${SDK_PATH} -I${LIBCXX_INCLUDE}" \
+            -DCMAKE_CXX_FLAGS="-stdlib=libc++ -I${LIBCXX_INCLUDE}" \
+            -DCMAKE_EXE_LINKER_FLAGS="-stdlib=libc++" \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
             -DCMAKE_OSX_SYSROOT="${SDK_PATH}" \
             -DCMAKE_FIND_FRAMEWORK=LAST \
