@@ -23,6 +23,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Select Xcode
+        run: |
+          XCODE_APP="$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)"
+          sudo xcode-select -s "${XCODE_APP}/Contents/Developer"
+
       - name: Install dependencies
         run: |
           brew install cmake openssl@3 bison pkg-config pcre2
@@ -41,10 +46,13 @@ jobs:
           cd "mariadb-${MARIADB_VERSION}"
           mkdir -p build && cd build
 
+          SDK_PATH="$(xcrun --show-sdk-path)"
+
           cmake .. \
             -DCMAKE_INSTALL_PREFIX="/mariadb-${MARIADB_VERSION}-macos-${{ matrix.arch }}" \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+            -DCMAKE_OSX_SYSROOT="${SDK_PATH}" \
             -DOPENSSL_ROOT_DIR="${OPENSSL_ROOT}" \
             -DOPENSSL_INCLUDE_DIR="${OPENSSL_ROOT}/include" \
             -DBISON_EXECUTABLE="${BISON_ROOT}/bin/bison" \
