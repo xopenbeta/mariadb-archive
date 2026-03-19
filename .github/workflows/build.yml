@@ -6,16 +6,33 @@ on:
       - 'v*'
 
 env:
-  MARIADB_VERSION: "12.2.2"
+  MACOS_DEPLOYMENT_TARGET: "12.0"
 
 jobs:
   build:
+    name: MariaDB ${{ matrix.mariadb_version }} (${{ matrix.target_arch }})
     strategy:
       fail-fast: false
       matrix:
+        mariadb_version:
+          - "10.6.25"
+          - "10.11.16"
+          - "11.4.10"
+          - "11.8.6"
+          - "12.2.2"
+          - "12.3.1"
+        target_arch:
+          - arm64
+          - x86_64
         include:
-          - runner: macos-14
-            arch: arm64
+          - target_arch: arm64
+            runner: macos-14
+            brew_prefix: /opt/homebrew
+            brew_bin: /opt/homebrew/bin/brew
+          - target_arch: x86_64
+            runner: macos-14
+            brew_prefix: /usr/local
+            brew_bin: /usr/local/bin/brew
 
     runs-on: ${{ matrix.runner }}
 
@@ -37,9 +54,44 @@ jobs:
           xcrun clang++ --version
           echo "DEVELOPER_DIR=${XCODE_APP}/Contents/Developer" >> "${GITHUB_ENV}"
 
+      - name: Prepare Rosetta and x86_64 Homebrew
+        if: matrix.target_arch == 'x86_64'
+        run: |
+          softwareupdate --install-rosetta --agree-to-license || true
+
+          if [ ! -x "/usr/local/bin/brew" ]; then
+            NONINTERACTIVE=1 arch -x86_64 /bin/bash -c \
+              "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          fi
+
+          arch -x86_64 /usr/local/bin/brew --version
+
       - name: Install dependencies
         run: |
-          brew install cmake openssl@3 bison pkg-config pcre2
+          BREW_BIN="${{ matrix.brew_bin }}"
+
+          if [ ! -x "${BREW_BIN}" ]; then
+            echo "Expected Homebrew not found: ${BREW_BIN}"
+            exit 1
+          fi
+
+          brew_cmd() {
+            if [ "${{ matrix.target_arch }}" = "x86_64" ]; then
+              arch -x86_64 "${BREW_BIN}" "$@"
+            else
+              "${BREW_BIN}" "$@"
+            fi
+          }
+
+          brew_cmd update
+          brew_cmd install cmake openssl@3 bison pkg-config pcre2
+
+          {
+            echo "MARIADB_VERSION=${{ matrix.mariadb_version }}"
+            echo "INSTALL_DIR=mariadb-${{ matrix.mariadb_version }}-macos-${{ matrix.target_arch }}"
+            echo "BREW_PREFIX=${{ matrix.brew_prefix }}"
+            echo "BREW_BIN=${BREW_BIN}"
+          } >> "${GITHUB_ENV}"
 
       - name: Sanitize environment
         run: |
@@ -57,10 +109,11 @@ jobs:
           echo "SDK path: ${SDK_PATH}"
           echo "CXX: ${CXX}"
           echo "xcode-select: $(xcode-select -p)"
+          echo "Target arch: ${{ matrix.target_arch }}"
           echo "SDK c++/v1 exists:       $([ -d "${SDK_PATH}/usr/include/c++/v1" ] && echo YES || echo NO)"
           echo "SDK c++/v1/stddef.h:     $([ -f "${SDK_PATH}/usr/include/c++/v1/stddef.h" ] && echo YES || echo NO)"
           echo "=== Default C++ include search order ==="
-          printf '' | "${CXX}" -std=c++17 -stdlib=libc++ -x c++ -E -v - 2>&1 | \
+          printf '' | "${CXX}" -arch "${{ matrix.target_arch }}" -std=c++17 -stdlib=libc++ -x c++ -E -v - 2>&1 | \
             sed -n '/#include <...> search starts here:/,/End of search list./p'
           echo "===================" 
           echo "SDKROOT=${SDK_PATH}" >> "${GITHUB_ENV}"
@@ -73,8 +126,18 @@ jobs:
 
       - name: Configure
         run: |
-          OPENSSL_ROOT="$(brew --prefix openssl@3)"
-          BISON_ROOT="$(brew --prefix bison)"
+          brew_cmd() {
+            if [ "${{ matrix.target_arch }}" = "x86_64" ]; then
+              arch -x86_64 "${BREW_BIN}" "$@"
+            else
+              "${BREW_BIN}" "$@"
+            fi
+          }
+
+          OPENSSL_ROOT="$(brew_cmd --prefix openssl@3)"
+          BISON_ROOT="$(brew_cmd --prefix bison)"
+          PCRE2_ROOT="$(brew_cmd --prefix pcre2)"
+          CMAKE_BIN="${BREW_PREFIX}/bin/cmake"
 
           cd "mariadb-${MARIADB_VERSION}"
           rm -rf build
@@ -92,21 +155,34 @@ jobs:
 
           # Export SDKROOT so Clang automatically resolves SDK and libc++ headers
           export SDKROOT="${SDK_PATH}"
+          export PATH="${BISON_ROOT}/bin:${BREW_PREFIX}/bin:${PATH}"
+          export PKG_CONFIG_PATH="${OPENSSL_ROOT}/lib/pkgconfig:${PCRE2_ROOT}/lib/pkgconfig"
 
-          cmake .. \
+          if [ ! -x "${CMAKE_BIN}" ]; then
+            echo "Expected CMake not found: ${CMAKE_BIN}"
+            exit 1
+          fi
+
+          "${CMAKE_BIN}" .. \
             -DCMAKE_C_COMPILER="${CC}" \
             -DCMAKE_CXX_COMPILER="${CXX}" \
-            -DCMAKE_INSTALL_PREFIX="/mariadb-${MARIADB_VERSION}-macos-${{ matrix.arch }}" \
+            -DCMAKE_INSTALL_PREFIX="/${INSTALL_DIR}" \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_VERBOSE_MAKEFILE=ON \
             -DCMAKE_CXX_STANDARD=17 \
-            -DCMAKE_CXX_FLAGS="-stdlib=libc++" \
-            -DCMAKE_EXE_LINKER_FLAGS="-stdlib=libc++" \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+            -DCMAKE_C_FLAGS="-arch ${{ matrix.target_arch }}" \
+            -DCMAKE_CXX_FLAGS="-arch ${{ matrix.target_arch }} -stdlib=libc++" \
+            -DCMAKE_EXE_LINKER_FLAGS="-arch ${{ matrix.target_arch }} -stdlib=libc++" \
+            -DCMAKE_SHARED_LINKER_FLAGS="-arch ${{ matrix.target_arch }} -stdlib=libc++" \
+            -DCMAKE_OSX_ARCHITECTURES="${{ matrix.target_arch }}" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOS_DEPLOYMENT_TARGET}" \
             -DCMAKE_OSX_SYSROOT="${SDK_PATH}" \
             -DCMAKE_FIND_FRAMEWORK=LAST \
+            -DCMAKE_PREFIX_PATH="${OPENSSL_ROOT};${PCRE2_ROOT};${BISON_ROOT}" \
             -DOPENSSL_ROOT_DIR="${OPENSSL_ROOT}" \
             -DOPENSSL_INCLUDE_DIR="${OPENSSL_ROOT}/include" \
+            -DPCRE2_INCLUDE_DIR="${PCRE2_ROOT}/include" \
+            -DPCRE2_LIBRARY="${PCRE2_ROOT}/lib/libpcre2-8.dylib" \
             -DZLIB_INCLUDE_DIR="${ZLIB_INCLUDE_DIR}" \
             -DZLIB_LIBRARY="${ZLIB_LIBRARY}" \
             -DBISON_EXECUTABLE="${BISON_ROOT}/bin/bison" \
@@ -129,19 +205,23 @@ jobs:
 
       - name: Package
         run: |
-          INSTALL_DIR="mariadb-${MARIADB_VERSION}-macos-${{ matrix.arch }}"
-
           cd "mariadb-${MARIADB_VERSION}/build"
+          rm -rf "${GITHUB_WORKSPACE}/stage"
           make install DESTDIR="${GITHUB_WORKSPACE}/stage"
 
           cd "${GITHUB_WORKSPACE}/stage"
           tar czf "${GITHUB_WORKSPACE}/${INSTALL_DIR}.tar.gz" "${INSTALL_DIR}"
 
+          cd "${GITHUB_WORKSPACE}"
+          shasum -a 256 "${INSTALL_DIR}.tar.gz" > "${INSTALL_DIR}.tar.gz.sha256"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mariadb-${{ env.MARIADB_VERSION }}-macos-${{ matrix.arch }}
-          path: mariadb-${{ env.MARIADB_VERSION }}-macos-${{ matrix.arch }}.tar.gz
+          name: mariadb-${{ matrix.mariadb_version }}-macos-${{ matrix.target_arch }}
+          path: |
+            mariadb-${{ matrix.mariadb_version }}-macos-${{ matrix.target_arch }}.tar.gz
+            mariadb-${{ matrix.mariadb_version }}-macos-${{ matrix.target_arch }}.tar.gz.sha256
 
   release:
     needs: build
@@ -158,4 +238,5 @@ jobs:
         with:
           files: |
             mariadb-*/mariadb-*.tar.gz
+            mariadb-*/mariadb-*.tar.gz.sha256
           generate_release_notes: true

@@ -5,12 +5,12 @@
 ## 触发构建
 
 ```bash
-git tag v202603191440
+git tag v202603191448
 git push
-git push origin v202603191440
+git push origin v202603191448
 ```
 
-构建完成后，GitHub Release 页面会自动发布对应版本的两个平台二进制包。
+构建完成后，GitHub Release 页面会自动发布全部支持版本在 arm64 与 x86_64 两个目标架构上的二进制包。
 
 ## 支持版本
 
@@ -27,8 +27,10 @@ git push origin v202603191440
 
 | 架构 | Runner | 最低 macOS |
 |------|--------|-----------|
-| x86_64 (Intel) | `macos-13` | 12.0 Monterey |
+| x86_64 (Intel) | `macos-14` | 12.0 Monterey |
 | arm64 (Apple Silicon) | `macos-14` | 12.0 Monterey |
+
+说明：由于 GitHub Actions 已不再稳定提供 `macos-13`，x86_64 产物改为在 `macos-14` Apple Silicon runner 上通过 Rosetta 与 x86_64 Homebrew 依赖链进行交叉编译。
 
 ## 构建配置
 
