@@ -39,7 +39,7 @@ jobs:
           BISON_ROOT="$(brew --prefix bison)"
 
           cd "mariadb-${MARIADB_VERSION}"
-          mkdir build && cd build
+          mkdir -p build && cd build
 
           cmake .. \
             -DCMAKE_INSTALL_PREFIX="/mariadb-${MARIADB_VERSION}-macos-${{ matrix.arch }}" \
