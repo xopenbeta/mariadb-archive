@@ -48,31 +48,16 @@ jobs:
       - name: Fix libc++ headers
         run: |
           SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
-          TOOLCHAIN_CXX="$(dirname $(dirname $(xcrun --find clang)))/include/c++/v1"
+          TOOLCHAIN_DIR="$(dirname $(dirname $(xcrun --find clang)))"
           echo "=== Diagnostics ==="
           echo "SDK path: ${SDK_PATH}"
-          echo "SDK libc++ dir: ${SDK_PATH}/usr/include/c++/v1"
-          echo "Toolchain libc++ dir: ${TOOLCHAIN_CXX}"
-          echo "Toolchain libc++ contents:"
-          ls -l "${TOOLCHAIN_CXX}" 2>/dev/null || echo "(not found)"
-          echo "SDK libc++ contents:"
-          ls -l "${SDK_PATH}/usr/include/c++/v1" 2>/dev/null || echo "(not found)"
-          echo "==================="
-          # If the SDK does not contain libc++ headers, symlink from the toolchain
-          if [ ! -d "${SDK_PATH}/usr/include/c++/v1" ] && [ -d "${TOOLCHAIN_CXX}" ]; then
-            echo "Symlinking toolchain libc++ headers into SDK"
-            sudo mkdir -p "${SDK_PATH}/usr/include/c++"
-            sudo ln -s "${TOOLCHAIN_CXX}" "${SDK_PATH}/usr/include/c++/v1"
-            echo "Symlink created: $(ls -la ${SDK_PATH}/usr/include/c++/v1)"
-          fi
-          # Export the resolved path for later steps
-          if [ -d "${TOOLCHAIN_CXX}" ]; then
-            echo "Using toolchain libc++ headers: ${TOOLCHAIN_CXX}"
-            echo "LIBCXX_INCLUDE=${TOOLCHAIN_CXX}" >> "${GITHUB_ENV}"
-          else
-            echo "WARNING: Toolchain libc++ not found, falling back to SDK path"
-            echo "LIBCXX_INCLUDE=${SDK_PATH}/usr/include/c++/v1" >> "${GITHUB_ENV}"
-          fi
+          echo "Toolchain dir: ${TOOLCHAIN_DIR}"
+          echo "SDK c++/v1 exists:       $([ -d "${SDK_PATH}/usr/include/c++/v1" ] && echo YES || echo NO)"
+          echo "SDK c++/v1/stddef.h:     $([ -f "${SDK_PATH}/usr/include/c++/v1/stddef.h" ] && echo YES || echo NO)"
+          echo "Toolchain c++/v1 exists: $([ -d "${TOOLCHAIN_DIR}/include/c++/v1" ] && echo YES || echo NO)"
+          echo "===================" 
+          # Export SDKROOT persistently so the compiler uses the correct SDK in all build steps
+          echo "SDKROOT=${SDK_PATH}" >> "${GITHUB_ENV}"
 
       - name: Download MariaDB source
         run: |
@@ -103,7 +88,7 @@ jobs:
             -DCMAKE_INSTALL_PREFIX="/mariadb-${MARIADB_VERSION}-macos-${{ matrix.arch }}" \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_CXX_STANDARD=17 \
-            -DCMAKE_CXX_FLAGS="-stdlib=libc++ -I${LIBCXX_INCLUDE}" \
+            -DCMAKE_CXX_FLAGS="-stdlib=libc++ -isystem ${SDK_PATH}/usr/include/c++/v1" \
             -DCMAKE_EXE_LINKER_FLAGS="-stdlib=libc++" \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
             -DCMAKE_OSX_SYSROOT="${SDK_PATH}" \

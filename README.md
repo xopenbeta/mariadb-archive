@@ -5,9 +5,9 @@
 ## 触发构建
 
 ```bash
-git tag v202603191337
+git tag v202603191350
 git push
-git push origin v202603191337
+git push origin v202603191350
 ```
 
 构建完成后，GitHub Release 页面会自动发布对应版本的两个平台二进制包。
