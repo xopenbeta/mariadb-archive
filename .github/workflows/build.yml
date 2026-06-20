@@ -1,4 +1,4 @@
-name: Build MariaDB for macOS
+name: Build MariaDB Archives
 
 on:
   push:
@@ -9,7 +9,7 @@ env:
   MACOS_DEPLOYMENT_TARGET: "12.0"
 
 jobs:
-  build:
+  build-macos:
     name: MariaDB ${{ matrix.mariadb_version }} (${{ matrix.target_arch }})
     strategy:
       fail-fast: false
@@ -223,8 +223,208 @@ jobs:
             mariadb-${{ matrix.mariadb_version }}-macos-${{ matrix.target_arch }}.tar.gz
             mariadb-${{ matrix.mariadb_version }}-macos-${{ matrix.target_arch }}.tar.gz.sha256
 
+  build-linux:
+    name: MariaDB ${{ matrix.mariadb_version }} (linux-x86_64)
+    strategy:
+      fail-fast: false
+      matrix:
+        mariadb_version:
+          - "10.6.25"
+          - "10.11.16"
+          - "11.4.10"
+          - "11.8.6"
+          - "12.2.2"
+          - "12.3.1"
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            pkg-config \
+            libssl-dev \
+            libpcre2-dev \
+            bison \
+            zlib1g-dev \
+            curl \
+            tar
+
+          {
+            echo "MARIADB_VERSION=${{ matrix.mariadb_version }}"
+            echo "INSTALL_DIR=mariadb-${{ matrix.mariadb_version }}-linux-x86_64"
+          } >> "${GITHUB_ENV}"
+
+      - name: Download MariaDB source
+        run: |
+          curl -fSL -o "mariadb-${MARIADB_VERSION}.tar.gz" \
+            "https://archive.mariadb.org/mariadb-${MARIADB_VERSION}/source/mariadb-${MARIADB_VERSION}.tar.gz"
+          tar xzf "mariadb-${MARIADB_VERSION}.tar.gz"
+
+      - name: Configure
+        run: |
+          cd "mariadb-${MARIADB_VERSION}"
+          rm -rf build
+          mkdir build && cd build
+
+          cmake .. \
+            -DCMAKE_INSTALL_PREFIX="/${INSTALL_DIR}" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DDEFAULT_CHARSET=utf8mb4 \
+            -DDEFAULT_COLLATION=utf8mb4_general_ci \
+            -DWITH_WSREP=OFF \
+            -DPLUGIN_WSREP=NO \
+            -DWITH_ROCKSDB=OFF \
+            -DPLUGIN_ROCKSDB=NO \
+            -DPLUGIN_MROONGA=NO \
+            -DPLUGIN_COLUMNSTORE=NO \
+            -DWITH_JEMALLOC=OFF \
+            -DWITH_UNIT_TESTS=OFF \
+            -DWITH_MARIABACKUP=ON
+
+      - name: Build
+        run: |
+          cd "mariadb-${MARIADB_VERSION}/build"
+          make -j"$(nproc)"
+
+      - name: Package
+        run: |
+          cd "mariadb-${MARIADB_VERSION}/build"
+          rm -rf "${GITHUB_WORKSPACE}/stage"
+          make install DESTDIR="${GITHUB_WORKSPACE}/stage"
+
+          cd "${GITHUB_WORKSPACE}/stage"
+          tar czf "${GITHUB_WORKSPACE}/${INSTALL_DIR}.tar.gz" "${INSTALL_DIR}"
+
+          cd "${GITHUB_WORKSPACE}"
+          sha256sum "${INSTALL_DIR}.tar.gz" > "${INSTALL_DIR}.tar.gz.sha256"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mariadb-${{ matrix.mariadb_version }}-linux-x86_64
+          path: |
+            mariadb-${{ matrix.mariadb_version }}-linux-x86_64.tar.gz
+            mariadb-${{ matrix.mariadb_version }}-linux-x86_64.tar.gz.sha256
+
+  build-windows:
+    name: MariaDB ${{ matrix.mariadb_version }} (windows-x86_64)
+    strategy:
+      fail-fast: false
+      matrix:
+        mariadb_version:
+          - "10.6.25"
+          - "10.11.16"
+          - "11.4.10"
+          - "11.8.6"
+          - "12.2.2"
+          - "12.3.1"
+
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          msystem: UCRT64
+          install: >-
+            base-devel
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-openssl
+            mingw-w64-ucrt-x86_64-pcre2
+            mingw-w64-ucrt-x86_64-zlib
+            mingw-w64-ucrt-x86_64-bison
+            mingw-w64-ucrt-x86_64-make
+            curl
+            tar
+
+      - name: Prepare build variables
+        shell: msys2 {0}
+        run: |
+          {
+            echo "MARIADB_VERSION=${{ matrix.mariadb_version }}"
+            echo "INSTALL_DIR=mariadb-${{ matrix.mariadb_version }}-windows-x86_64"
+          } >> "${GITHUB_ENV}"
+
+      - name: Download MariaDB source
+        shell: msys2 {0}
+        run: |
+          curl -fSL -o "mariadb-${MARIADB_VERSION}.tar.gz" \
+            "https://archive.mariadb.org/mariadb-${MARIADB_VERSION}/source/mariadb-${MARIADB_VERSION}.tar.gz"
+          tar xzf "mariadb-${MARIADB_VERSION}.tar.gz"
+
+      - name: Configure
+        shell: msys2 {0}
+        run: |
+          cd "mariadb-${MARIADB_VERSION}"
+          rm -rf build
+          mkdir build && cd build
+
+          cmake .. -G "MinGW Makefiles" \
+            -DCMAKE_INSTALL_PREFIX="/${INSTALL_DIR}" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DOPENSSL_ROOT_DIR="/ucrt64" \
+            -DOPENSSL_INCLUDE_DIR="/ucrt64/include" \
+            -DPCRE2_INCLUDE_DIR="/ucrt64/include" \
+            -DPCRE2_LIBRARY="/ucrt64/lib/libpcre2-8.dll.a" \
+            -DZLIB_INCLUDE_DIR="/ucrt64/include" \
+            -DZLIB_LIBRARY="/ucrt64/lib/libz.dll.a" \
+            -DBISON_EXECUTABLE="/ucrt64/bin/bison" \
+            -DDEFAULT_CHARSET=utf8mb4 \
+            -DDEFAULT_COLLATION=utf8mb4_general_ci \
+            -DWITH_WSREP=OFF \
+            -DPLUGIN_WSREP=NO \
+            -DWITH_ROCKSDB=OFF \
+            -DPLUGIN_ROCKSDB=NO \
+            -DPLUGIN_MROONGA=NO \
+            -DPLUGIN_COLUMNSTORE=NO \
+            -DWITH_JEMALLOC=OFF \
+            -DWITH_UNIT_TESTS=OFF \
+            -DWITH_MARIABACKUP=OFF
+
+      - name: Build
+        shell: msys2 {0}
+        run: |
+          cd "mariadb-${MARIADB_VERSION}/build"
+          mingw32-make -j"$(nproc)"
+
+      - name: Package
+        shell: msys2 {0}
+        run: |
+          cd "mariadb-${MARIADB_VERSION}/build"
+          rm -rf "${GITHUB_WORKSPACE}/stage"
+          mingw32-make install DESTDIR="${GITHUB_WORKSPACE}/stage"
+
+          cd "${GITHUB_WORKSPACE}/stage"
+          tar czf "${GITHUB_WORKSPACE}/${INSTALL_DIR}.tar.gz" "${INSTALL_DIR}"
+
+          cd "${GITHUB_WORKSPACE}"
+          sha256sum "${INSTALL_DIR}.tar.gz" > "${INSTALL_DIR}.tar.gz.sha256"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mariadb-${{ matrix.mariadb_version }}-windows-x86_64
+          path: |
+            mariadb-${{ matrix.mariadb_version }}-windows-x86_64.tar.gz
+            mariadb-${{ matrix.mariadb_version }}-windows-x86_64.tar.gz.sha256
+
   release:
-    needs: build
+    needs:
+      - build-macos
+      - build-linux
+      - build-windows
     runs-on: ubuntu-latest
     permissions:
       contents: write
