@@ -366,6 +366,15 @@ jobs:
             "https://archive.mariadb.org/mariadb-${MARIADB_VERSION}/source/mariadb-${MARIADB_VERSION}.tar.gz"
           tar xzf "mariadb-${MARIADB_VERSION}.tar.gz"
 
+      - name: Patch Windows packaging script for CMake 4.x
+        shell: msys2 {0}
+        run: |
+          PKG_CMAKE_FILE="mariadb-${MARIADB_VERSION}/win/packaging/CMakeLists.txt"
+          if [ -f "${PKG_CMAKE_FILE}" ]; then
+            # MariaDB 10.x scripts may use MESSAGE_ONCE(), which breaks on newer CMake.
+            sed -i 's/MESSAGE_ONCE(/message(STATUS /g' "${PKG_CMAKE_FILE}"
+          fi
+
       - name: Configure
         shell: msys2 {0}
         run: |
