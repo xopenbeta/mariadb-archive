@@ -39,7 +39,8 @@ git push origin v202606201550
 - **SSL**: OpenSSL 3.x
 - **默认字符集**: `utf8mb4` / `utf8mb4_general_ci`
 - **禁用**: WSREP/Galera、RocksDB、Mroonga、jemalloc、单元测试
-- **源码**: 从 [archive.mariadb.org](https://archive.mariadb.org) 下载
+- **macOS/Linux**: 从 [archive.mariadb.org](https://archive.mariadb.org) 下载源码构建
+- **Windows**: 下载 MariaDB 官方 winx64 归档并重新打包为统一产物格式
 
 ## 使用方法
 

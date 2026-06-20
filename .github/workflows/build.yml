@@ -332,97 +332,41 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup MSYS2
-        uses: msys2/setup-msys2@v2
-        with:
-          update: true
-          msystem: UCRT64
-          install: >-
-            base-devel
-            bison
-            mingw-w64-ucrt-x86_64-gcc
-            mingw-w64-ucrt-x86_64-binutils
-            mingw-w64-ucrt-x86_64-pkgconf
-            mingw-w64-ucrt-x86_64-cmake
-            mingw-w64-ucrt-x86_64-openssl
-            mingw-w64-ucrt-x86_64-pcre2
-            mingw-w64-ucrt-x86_64-zlib
-            mingw-w64-ucrt-x86_64-make
-            curl
-            tar
-
       - name: Prepare build variables
-        shell: msys2 {0}
+        shell: pwsh
         run: |
-          {
-            echo "MARIADB_VERSION=${{ matrix.mariadb_version }}"
-            echo "INSTALL_DIR=mariadb-${{ matrix.mariadb_version }}-windows-x86_64"
-          } >> "${GITHUB_ENV}"
+          "MARIADB_VERSION=${{ matrix.mariadb_version }}" >> $env:GITHUB_ENV
+          "INSTALL_DIR=mariadb-${{ matrix.mariadb_version }}-windows-x86_64" >> $env:GITHUB_ENV
 
-      - name: Download MariaDB source
-        shell: msys2 {0}
+      - name: Download and repackage MariaDB Windows archive
+        shell: pwsh
         run: |
-          curl -fSL -o "mariadb-${MARIADB_VERSION}.tar.gz" \
-            "https://archive.mariadb.org/mariadb-${MARIADB_VERSION}/source/mariadb-${MARIADB_VERSION}.tar.gz"
-          tar xzf "mariadb-${MARIADB_VERSION}.tar.gz"
+          $zipName = "mariadb-$env:MARIADB_VERSION-winx64.zip"
+          $zipUrl = "https://archive.mariadb.org/mariadb-$env:MARIADB_VERSION/winx64-packages/$zipName"
+          $stageDir = Join-Path $env:GITHUB_WORKSPACE "stage"
+          $packageDir = Join-Path $stageDir $env:INSTALL_DIR
 
-      - name: Patch Windows packaging script for CMake 4.x
-        shell: msys2 {0}
-        run: |
-          PKG_CMAKE_FILE="mariadb-${MARIADB_VERSION}/win/packaging/CMakeLists.txt"
-          if [ -f "${PKG_CMAKE_FILE}" ]; then
-            # MariaDB 10.x scripts may use MESSAGE_ONCE(), which breaks on newer CMake.
-            sed -i 's/MESSAGE_ONCE(/message(STATUS /g' "${PKG_CMAKE_FILE}"
-          fi
+          Invoke-WebRequest -Uri $zipUrl -OutFile $zipName
+          Remove-Item -Recurse -Force $stageDir -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $stageDir | Out-Null
+          Expand-Archive -Path $zipName -DestinationPath $stageDir
 
-      - name: Configure
-        shell: msys2 {0}
-        run: |
-          cd "mariadb-${MARIADB_VERSION}"
-          rm -rf build
-          mkdir build && cd build
+          $extractedDir = Get-ChildItem -Path $stageDir -Directory | Select-Object -First 1
+          if (-not $extractedDir) {
+            throw "No directory found after extracting $zipName"
+          }
 
-          cmake .. -G "MinGW Makefiles" \
-            -DCMAKE_INSTALL_PREFIX="/${INSTALL_DIR}" \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_CXX_FLAGS="-D_GLIBCXX_HAS_GTHREADS=0" \
-            -DOPENSSL_ROOT_DIR="/ucrt64" \
-            -DOPENSSL_INCLUDE_DIR="/ucrt64/include" \
-            -DPCRE2_INCLUDE_DIR="/ucrt64/include" \
-            -DPCRE2_LIBRARY="/ucrt64/lib/libpcre2-8.dll.a" \
-            -DZLIB_INCLUDE_DIR="/ucrt64/include" \
-            -DZLIB_LIBRARY="/ucrt64/lib/libz.dll.a" \
-            -DBISON_EXECUTABLE="/usr/bin/bison" \
-            -DDEFAULT_CHARSET=utf8mb4 \
-            -DDEFAULT_COLLATION=utf8mb4_general_ci \
-            -DWITH_WSREP=OFF \
-            -DPLUGIN_WSREP=NO \
-            -DWITH_ROCKSDB=OFF \
-            -DPLUGIN_ROCKSDB=NO \
-            -DPLUGIN_MROONGA=NO \
-            -DPLUGIN_COLUMNSTORE=NO \
-            -DWITH_JEMALLOC=OFF \
-            -DWITH_UNIT_TESTS=OFF \
-            -DWITH_MARIABACKUP=OFF
+          if ($extractedDir.FullName -ne $packageDir) {
+            Move-Item -Path $extractedDir.FullName -Destination $packageDir
+          }
 
-      - name: Build
-        shell: msys2 {0}
-        run: |
-          cd "mariadb-${MARIADB_VERSION}/build"
-          mingw32-make -j"$(nproc)"
+          Push-Location $stageDir
+          tar -czf (Join-Path $env:GITHUB_WORKSPACE "$env:INSTALL_DIR.tar.gz") $env:INSTALL_DIR
+          Pop-Location
 
-      - name: Package
-        shell: msys2 {0}
-        run: |
-          cd "mariadb-${MARIADB_VERSION}/build"
-          rm -rf "${GITHUB_WORKSPACE}/stage"
-          mingw32-make install DESTDIR="${GITHUB_WORKSPACE}/stage"
-
-          cd "${GITHUB_WORKSPACE}/stage"
-          tar czf "${GITHUB_WORKSPACE}/${INSTALL_DIR}.tar.gz" "${INSTALL_DIR}"
-
-          cd "${GITHUB_WORKSPACE}"
-          sha256sum "${INSTALL_DIR}.tar.gz" > "${INSTALL_DIR}.tar.gz.sha256"
+          $archivePath = Join-Path $env:GITHUB_WORKSPACE "$env:INSTALL_DIR.tar.gz"
+          $hash = (Get-FileHash -Algorithm SHA256 $archivePath).Hash.ToLowerInvariant()
+          "$hash  $env:INSTALL_DIR.tar.gz" | Set-Content -Path "$archivePath.sha256"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
