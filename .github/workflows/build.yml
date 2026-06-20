@@ -339,12 +339,14 @@ jobs:
           msystem: UCRT64
           install: >-
             base-devel
-            mingw-w64-ucrt-x86_64-toolchain
+            bison
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-binutils
+            mingw-w64-ucrt-x86_64-pkgconf
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-openssl
             mingw-w64-ucrt-x86_64-pcre2
             mingw-w64-ucrt-x86_64-zlib
-            mingw-w64-ucrt-x86_64-bison
             mingw-w64-ucrt-x86_64-make
             curl
             tar
@@ -380,7 +382,7 @@ jobs:
             -DPCRE2_LIBRARY="/ucrt64/lib/libpcre2-8.dll.a" \
             -DZLIB_INCLUDE_DIR="/ucrt64/include" \
             -DZLIB_LIBRARY="/ucrt64/lib/libz.dll.a" \
-            -DBISON_EXECUTABLE="/ucrt64/bin/bison" \
+            -DBISON_EXECUTABLE="/usr/bin/bison" \
             -DDEFAULT_CHARSET=utf8mb4 \
             -DDEFAULT_COLLATION=utf8mb4_general_ci \
             -DWITH_WSREP=OFF \
